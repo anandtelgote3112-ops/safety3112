@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isSuperAdmin() {
+      return signedIn() && request.auth.token.email == "anandtelgote3112@gmail.com";
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function activeUser() {
+      return signedIn() && (isSuperAdmin() || (userDoc().active == true && userDoc().role != "Pending"));
+    }
+    function assignedTo(projectId) {
+      return isSuperAdmin() || (activeUser() && projectId in userDoc().projectIds);
+    }
+
+    match /users/{uid} {
+      allow read: if isSuperAdmin() || (signedIn() && request.auth.uid == uid);
+      allow create: if isSuperAdmin() || (signedIn() && request.auth.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == "Pending"
+        && request.resource.data.active == false);
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+    match /projects/{projectId} {
+      allow read: if isSuperAdmin() || assignedTo(projectId);
+      allow create, update, delete: if isSuperAdmin();
+    }
+    match /records/{recordId} {
+      allow read: if activeUser() && assignedTo(resource.data.projectId);
+      allow create: if activeUser()
+        && assignedTo(request.resource.data.projectId)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status in ["Pending", "Open"];
+      allow update: if activeUser() && assignedTo(resource.data.projectId)
+        && (isSuperAdmin() || userDoc().role in ["Safety Manager", "Project Admin", "Project Manager"]);
+      allow delete: if isSuperAdmin();
+    }
+  }
+}

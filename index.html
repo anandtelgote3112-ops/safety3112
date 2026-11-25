@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#123b32"><link rel="manifest" href="manifest.json">
+<title>SAFETY360 | Construction EHS</title>
+<style>
+:root{--g:#123b32;--lime:#c5e86c;--bg:#f3f6f4;--ink:#15221e;--muted:#65756e;--line:#dce5df;--white:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px system-ui,Segoe UI,Arial}
+header{background:var(--g);color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
+header h1{margin:0;font-size:21px}header small{color:#d4e7dc}.wrap{max-width:1180px;margin:auto;padding:18px}
+button{border:0;border-radius:10px;padding:10px 14px;background:var(--g);color:white;font-weight:650;cursor:pointer}
+button.secondary{background:#e5eee8;color:var(--g);border:1px solid var(--line)}button.danger{background:#a32c2c}
+input,select,textarea{width:100%;padding:11px;border:1px solid #cbd7d0;border-radius:9px;background:white;font:inherit}
+label{display:block;font-size:13px;font-weight:650;margin:10px 0 5px}textarea{min-height:76px}
+.card{background:white;border:1px solid var(--line);border-radius:15px;padding:16px;margin:12px 0;box-shadow:0 2px 8px #123b3208}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}.metric{font-size:28px;font-weight:800;color:var(--g)}
+.muted{color:var(--muted);font-size:13px}.nav{display:flex;gap:7px;overflow:auto;margin:14px 0}.nav button{white-space:nowrap;background:#e4ece7;color:var(--g)}.nav button.active{background:var(--g);color:white}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.hidden{display:none!important}
+.item{border:1px solid var(--line);border-radius:12px;padding:13px;margin:9px 0;background:#fff}.pill{display:inline-block;padding:4px 9px;border-radius:20px;background:#fff0c8;color:#755300;font-size:12px}.pill.ok{background:#dff4e6;color:#145b32}.pill.bad{background:#ffe3e3;color:#8c2020}
+form{margin:0}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions button{flex:1}.topline{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#login{max-width:430px;margin:7vh auto}.notice{padding:12px;background:#eef5f0;border-radius:10px;color:#315344;font-size:13px}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px;border-bottom:1px solid var(--line);font-size:13px}
+@media(max-width:600px){.wrap{padding:10px}header{padding:13px}.desktop{display:none}}
+</style>
+</head>
+<body>
+<header><div><h1>🦺 SAFETY360</h1><small>Construction EHS Management • Cloud Edition</small></div><div id="userbar" class="muted"></div></header>
+<main class="wrap">
+<section id="login" class="card">
+<h2>Sign in to SAFETY360</h2>
+<p class="muted">Use your authorized work account. New users need Super Admin approval.</p>
+<label>Email</label><input id="email" type="email" autocomplete="username" placeholder="name@company.com">
+<label>Password</label><input id="password" type="password" autocomplete="current-password">
+<div class="actions"><button onclick="signIn()">Sign in</button><button class="secondary" onclick="signUp()">Create account</button></div>
+<p id="loginMsg" class="muted"></p>
+</section>
+<section id="app" class="hidden">
+<div class="topline card">
+<div><strong id="welcome">Welcome</strong><div class="muted" id="roleline"></div></div>
+<div class="row" style="grid-template-columns:minmax(170px,1fr) auto;align-items:center">
+<select id="projectSelect" onchange="changeProject()"></select><button class="secondary" onclick="signOut()">Sign out</button>
+</div></div>
+<nav class="nav" id="nav"></nav>
+<section id="view"></section>
+</section>
+</main>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut as fbSignOut } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const SUPER_ADMIN = "anandtelgote3112@gmail.com";
+const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app);
+let currentUser=null, profile=null, projects=[], projectId="", tab="Dashboard", records=[];
+const modules=["Dashboard","Work Permits","Observations","Incidents","TBT","Inspections","Contractors","Users & Roles","Projects","Reports"];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const isSuper=()=>currentUser?.email?.toLowerCase()===SUPER_ADMIN;
+const canManage=()=>isSuper()||profile?.role==="Project Admin";
+function msg(s){$("loginMsg").textContent=s}
+window.signIn=async()=>{try{msg("Signing in…");await signInWithEmailAndPassword(auth,$("email").value.trim(),$("password").value)}catch(e){msg(e.message)}};
+window.signUp=async()=>{try{msg("Creating account…");const c=await createUserWithEmailAndPassword(auth,$("email").value.trim(),$("password").value);await setDoc(doc(db,"users",c.user.uid),{email:c.user.email,role:"Pending",projectIds:[],active:false,createdAt:serverTimestamp()});msg("Account created. Ask Super Admin to assign your project and role.")}catch(e){msg(e.message)}};
+window.signOut=()=>fbSignOut(auth);
+onAuthStateChanged(auth,async u=>{
+ currentUser=u;
+ if(!u){$("login").classList.remove("hidden");$("app").classList.add("hidden");$("userbar").textContent="";return}
+ try{
+  if(isSuper()){profile={email:u.email,role:"Super Admin",active:true,projectIds:[]};await setDoc(doc(db,"users",u.uid),{email:u.email,role:"Super Admin",active:true,projectIds:[]},{merge:true})}
+  else{const s=await getDoc(doc(db,"users",u.uid));profile=s.exists()?s.data():null;if(!profile||!profile.active||profile.role==="Pending"){await fbSignOut(auth);msg("Your account is awaiting Super Admin approval.");return}}
+  $("login").classList.add("hidden");$("app").classList.remove("hidden");$("userbar").textContent=u.email;
+  $("welcome").textContent="Welcome, "+u.email;$("roleline").textContent=profile.role+(isSuper()?" • Full system access":" • Assigned project access");
+  await loadProjects();renderNav();await showTab("Dashboard");
+ }catch(e){alert("Access setup error: "+e.message);await fbSignOut(auth)}
+});
+async function loadProjects(){
+ const snap=await getDocs(collection(db,"projects"));
+ const all=snap.docs.map(d=>({id:d.id,...d.data()}));
+ projects=isSuper()?all:all.filter(p=>(profile.projectIds||[]).includes(p.id));
+ $("projectSelect").innerHTML=projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+ if(!projectId||!projects.some(p=>p.id===projectId))projectId=projects[0]?.id||"";
+ $("projectSelect").value=projectId;
+ if(!projects.length)$("view").innerHTML='<div class="card">No project assigned yet. Contact Super Admin.</div>';
+}
+window.changeProject=async()=>{projectId=$("projectSelect").value;await showTab(tab)};
+function renderNav(){$("nav").innerHTML=modules.filter(m=>m!=="Users & Roles"&&!((!isSuper())&&["Projects"].includes(m))).map(m=>`<button class="${m===tab?"active":""}" onclick="showTab('${m}')">${m}</button>`).join("")+(isSuper()?'<button onclick="showTab(\\'Users & Roles\\')">Users & Roles</button><button onclick="showTab(\\'Projects\\')">Projects</button>':"")}
+window.showTab=async t=>{tab=t;renderNav();await showTab(t)};
+async function showTab(t){
+ if(!projectId&&!["Projects","Users & Roles"].includes(t)){await loadProjects();if(!projectId)return}
+ if(t==="Dashboard"){const all=await getRecords();const count=k=>all.filter(x=>x.module===k).length;const pending=all.filter(x=>x.module==="Work Permits"&&x.status==="Pending").length;
+ $("view").innerHTML=`<h2>Project Safety Dashboard</h2><div class="grid">${[["Total Records",all.length],["Pending Permits",pending],["Observations",count("Observations")],["Incidents",count("Incidents")],["TBT Sessions",count("TBT")],["Inspections",count("Inspections")]].map(x=>`<div class="card"><div class="metric">${x[1]}</div><div class="muted">${x[0]}</div></div>`).join("")}</div><div class="card"><h3>Quick actions</h3><div class="actions">${["Work Permits","Observations","Incidents","TBT","Inspections"].map(x=>`<button class="secondary" onclick="showTab('${x}')">+ ${x}</button>`).join("")}</div></div>`;
+ } else if(t==="Projects"){await projectsView()}
+ else if(t==="Users & Roles"){await usersView()}
+ else if(t==="Reports"){await reportsView()}
+ else{await moduleView(t)}
+}
+async function getRecords(){if(!projectId)return[];const q=query(collection(db,"records"),where("projectId","==",projectId));const s=await getDocs(q);return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))}
+async function moduleView(m){
+ const list=await getRecords(),items=list.filter(x=>x.module===m);
+ const fields={
+ "Work Permits":[["Permit type","select","Work at Height|Hot Work|Electrical Work|Excavation|Confined Space|General Work"],["Location","text"],["Contractor","text"],["Work description","textarea"],["Hazards","textarea"],["Start time","datetime-local"],["End time","datetime-local"]],
+ "Observations":[["Type","select","Unsafe Act|Unsafe Condition|Good Practice|Near Miss"],["Location","text"],["Risk level","select","Low|Medium|High|Critical"],["Description","textarea"],["Corrective action","textarea"]],
+ "Incidents":[["Type","select","Near Miss|Injury|Property Damage|Fire|Electrical Incident"],["Date & time","datetime-local"],["Location","text"],["Person involved / witness","text"],["Description","textarea"],["Immediate action","textarea"]],
+ "TBT":[["Topic","text"],["Location","text"],["Conducted by","text"],["Attendance count","number"],["Key points discussed","textarea"]],
+ "Inspections":[["Category","select","Work at Height|Electrical Safety|Housekeeping|Fire Safety|Scaffolding|Lifting Operations|Excavation"],["Location","text"],["Inspector","text"],["Findings / remarks","textarea"]]
+ }[m]||[];
+ $("view").innerHTML=`<div class="card"><h2>${m}</h2><form id="recordForm"><div class="row">${fields.map((f,i)=>`<div><label>${f[0]}</label>${f[1]==="textarea"?`<textarea name="f${i}" required></textarea>`:f[1]==="select"?`<select name="f${i}">${f[2].split("|").map(v=>`<option>${v}</option>`).join("")}</select>`:`<input name="f${i}" type="${f[1]}" ${["Location","Description","Topic","Permit type"].includes(f[0])?"required":""}>`}</div>`).join("")}</div><label>Attachment (optional)</label><input type="file" id="attachment" accept="image/*,.pdf" /><p class="muted">Attachments are prepared for Storage integration; keep records concise.</p><button>Submit ${m}</button></form></div><h3>Recent ${m}</h3>${items.map(x=>`<div class="item"><strong>${esc(x.title||m)}</strong><div class="muted">${esc(x.createdAt?.toDate?.().toLocaleString?.()||"Just submitted")}</div><span class="pill ${x.status==="Approved"?"ok":x.status==="Rejected"?"bad":""}">${esc(x.status||"Submitted")}</span><p>${esc(x.summary||"")}</p>${m==="Work Permits"&&(isSuper()||profile.role==="Safety Manager"||profile.role==="Project Admin")&&x.status==="Pending"?`<div class="actions"><button onclick="approve('${x.id}','Approved')">Approve</button><button class="danger" onclick="approve('${x.id}','Rejected')">Reject</button></div>`:""}</div>`).join("")||'<p class="muted">No records submitted yet.</p>'}`;
+ $("recordForm").onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target),vals=fields.map((f,i)=>`${f[0]}: ${fd.get("f"+i)||""}`);try{await addDoc(collection(db,"records"),{projectId,module:m,title:fields.length?fd.get("f0"):m,summary:vals.join(" • "),values:vals,status:m==="Work Permits"?"Pending":"Open",createdBy:currentUser.uid,createdByEmail:currentUser.email,createdAt:serverTimestamp()});await showTab(m)}catch(err){alert(err.message)}};
+}
+window.approve=async(id,status)=>{try{await updateDoc(doc(db,"records",id),{status,approvedBy:currentUser.email,approvedAt:serverTimestamp()});await showTab(tab)}catch(e){alert(e.message)}};
+async function projectsView(){
+ const rows=projects.map(p=>`<div class="item"><strong>${esc(p.name)}</strong><div class="muted">${esc(p.location||"")}</div></div>`).join("");
+ $("view").innerHTML=`<div class="card"><h2>Project Management</h2><form id="projectForm"><label>Project name</label><input name="name" required><label>Location</label><input name="location"><button>Create Project</button></form></div><h3>Projects</h3>${rows||"No projects yet."}`;
+ $("projectForm").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);await addDoc(collection(db,"projects"),{name:f.get("name"),location:f.get("location"),active:true,createdAt:serverTimestamp(),createdBy:currentUser.uid});projectId="";await loadProjects();await showTab("Projects")};
+}
+async function usersView(){
+ const s=await getDocs(collection(db,"users"));const users=s.docs.map(d=>({id:d.id,...d.data()}));
+ $("view").innerHTML=`<div class="card"><h2>User Access Control</h2><p class="muted">New users register themselves. Assign a role and project access here. Only Super Admin can manage users.</p>${users.map(u=>`<div class="item"><strong>${esc(u.email)}</strong><div class="muted">Current: ${esc(u.role||"Pending")} • ${u.active?"Active":"Inactive"}</div><label>Role</label><select id="role-${u.id}">${["Pending","Safety Officer","Safety Manager","Project Admin","Project Manager","Contractor","Security","Viewer"].map(r=>`<option ${u.role===r?"selected":""}>${r}</option>`).join("")}</select><label>Project IDs (comma separated)</label><input id="projects-${u.id}" value="${esc((u.projectIds||[]).join(","))}" placeholder="Use project IDs from Firestore"><label class="checkrow"><input id="active-${u.id}" type="checkbox" ${u.active?"checked":""} style="width:auto"> Active</label><button onclick="saveUser('${u.id}')">Save access</button></div>`).join("")}</div>`;
+}
+window.saveUser=async id=>{const role=$("role-"+id).value,projectIds=$("projects-"+id).value.split(",").map(x=>x.trim()).filter(Boolean),active=$("active-"+id).checked;await updateDoc(doc(db,"users",id),{role,projectIds,active,updatedAt:serverTimestamp()});alert("User access updated.")};
+async function reportsView(){const r=await getRecords();$("view").innerHTML=`<div class="card"><h2>Reports & Export</h2><p>${r.length} records in this project.</p><button onclick="exportCsv()">Download CSV</button></div>`}
+window.exportCsv=async()=>{const r=await getRecords(),rows=[["Module","Title","Status","Summary"],...r.map(x=>[x.module,x.title,x.status,x.summary])];const csv=rows.map(a=>a.map(v=>'"'+String(v??"").replaceAll('"','""')+'"').join(",")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="SAFETY360-report.csv";a.click();URL.revokeObjectURL(a.href)};
+</script>
+</body></html>
