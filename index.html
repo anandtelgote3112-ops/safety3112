@@ -71,7 +71,19 @@ onAuthStateChanged(auth,async u=>{
   else{const s=await getDoc(doc(db,"users",u.uid));profile=s.exists()?s.data():null;if(!profile||!profile.active||profile.role==="Pending"){await fbSignOut(auth);msg("Your account is awaiting Super Admin approval.");return}}
   $("login").classList.add("hidden");$("app").classList.remove("hidden");$("userbar").textContent=u.email;
   $("welcome").textContent="Welcome, "+u.email;$("roleline").textContent=profile.role+(isSuper()?" • Full system access":" • Assigned project access");
-  await loadProjects();renderNav();await showTab("Dashboard");
+  await loadProjects();function renderNav() {
+  const buttons = modules
+    .filter(m => m !== "Users & Roles" && (isSuper() || m !== "Projects"))
+    .map(m => `<button class="${m === tab ? "active" : ""}" onclick="showTab('${esc(m)}')">${esc(m)}</button>`)
+    .join("");
+
+  const adminButtons = isSuper()
+    ? `<button onclick="showTab('Users &amp; Roles')">Users &amp; Roles</button>
+       <button onclick="showTab('Projects')">Projects</button>`
+    : "";
+
+  $("nav").innerHTML = buttons + adminButtons;
+};await showTab("Dashboard");
  }catch(e){alert("Access setup error: "+e.message);await fbSignOut(auth)}
 });
 
