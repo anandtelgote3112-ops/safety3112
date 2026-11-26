@@ -86,8 +86,8 @@ onAuthStateChanged(auth,async u=>{
 };await showTab("Dashboard");
  }catch(e){alert("Access setup error: "+e.message);await fbSignOut(auth)}
 });
-
-async function () {
+{
+  async function loadProjects() {
   let all = [];
 
   if (isSuper()) {
