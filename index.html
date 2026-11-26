@@ -74,7 +74,41 @@ onAuthStateChanged(auth,async u=>{
   await loadProjects();renderNav();await showTab("Dashboard");
  }catch(e){alert("Access setup error: "+e.message);await fbSignOut(auth)}
 });
-async function loadProjects(){
+
+async function () {
+  let all = [];
+
+  if (isSuper()) {
+    const snap = await getDocs(collection(db, "projects"));
+    all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } else {
+    const ids = profile?.projectIds || [];
+    const docs = await Promise.all(
+      ids.map(id => getDoc(doc(db, "projects", id)))
+    );
+    all = docs
+      .filter(d => d.exists())
+      .map(d => ({ id: d.id, ...d.data() }));
+  }
+
+  projects = all;
+
+  $("projectSelect").innerHTML = projects
+    .map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`)
+    .join("");
+
+  if (!projectId || !projects.some(p => p.id === projectId)) {
+    projectId = projects[0]?.id || "";
+  }
+
+  $("projectSelect").value = projectId;
+
+  if (!projects.length) {
+    $("view").innerHTML =
+      '<div class="card">No project assigned yet. Create a project or contact Super Admin.</div>';
+  }
+}
+{
  const snap=await getDocs(collection(db,"projects"));
  const all=snap.docs.map(d=>({id:d.id,...d.data()}));
  projects=isSuper()?all:all.filter(p=>(profile.projectIds||[]).includes(p.id));
